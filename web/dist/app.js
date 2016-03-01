@@ -9,7 +9,8 @@ $( function() {
 
         var game = {
             gridLineWidth: 30,
-            speed: 4
+            speed: 3,
+            map: null
         };
 
         var grid = {
@@ -68,6 +69,7 @@ $( function() {
          * Game functions
          */
         function start() {
+            generateMap();
             drawGame();
 
             $( canvas ).on( 'mousemove', function( event ) {
@@ -79,17 +81,17 @@ $( function() {
         }
 
         function drawGame() {
-            setInterval( function() {
-                clearGame();
-                drawGrid();
-                drawBall();
-                if ( false === ball.stopped ) {
-                    if ( !collisionWithMouse() ) {
-                        calculateBallNextMovement();
-                        moveGrid();
-                    }
+            clearGame();
+            drawMap();
+            drawBall();
+            if ( false === ball.stopped ) {
+                if ( !collisionWithMouse() ) {
+                    calculateBallNextMovement();
+                    moveGrid();
                 }
-            }, 1000 / 60 );
+            }
+
+            requestAnimationFrame( drawGame );
         }
 
         function clearGame() {
@@ -113,18 +115,23 @@ $( function() {
             ballNextMovement.x = ball.x + vector.x;
             ballNextMovement.y = ball.y + vector.y;
 
-            if ( ( ( vector.x >= 0 && ballNextMovement.x > mouse.x ) || ( vector.x < 0 && ballNextMovement.x < mouse.x ) ) && !collisionWithBorder( border.LEFT ) && !collisionWithBorder( border.RIGHT ) ) {
+            /*
+             * If ball is bloqued with border collision, vector or other axis will do the ball exceed mouse
+             */
+            if ( ( ( vector.x > 0 && ballNextMovement.x > mouse.x ) || ( vector.x < 0 && ballNextMovement.x < mouse.x ) ) && !collisionWithBorder( border.LEFT ) && !collisionWithBorder( border.RIGHT ) ) {
                 ballNextMovement.x = mouse.x;
             }
 
-            if ( ( ( vector.y >= 0 && ballNextMovement.y > mouse.y ) || ( vector.y < 0 && ballNextMovement.y < mouse.y ) ) && !collisionWithBorder( border.TOP ) && !collisionWithBorder( border.BOTTOM ) ) {
+            if ( ( ( vector.y > 0 && ballNextMovement.y > mouse.y ) || ( vector.y < 0 && ballNextMovement.y < mouse.y ) ) && !collisionWithBorder( border.TOP ) && !collisionWithBorder( border.BOTTOM ) ) {
                 ballNextMovement.y = mouse.y;
             }
         }
 
-        function ballApplyNextMovement() {
-            ball.x = ballNextMovement.x;
-            ball.y = ballNextMovement.y;
+        function ballApplyNextMovement( ballNewNextMovement ) {
+            ballNewNextMovement = ballNewNextMovement || ballNextMovement;
+
+            ball.x = ballNewNextMovement.x;
+            ball.y = ballNewNextMovement.y;
         }
 
         function checkIfNeedToUnStopBall() {
@@ -162,7 +169,6 @@ $( function() {
             if ( collisionWithMouse() ) {
                 // ball proach to mouse, we adjust vector to reach cursor and then stop vector
                 calculateVectors( Math.sqrt( Math.pow( mouse.x - ball.x, 2 ) + Math.pow( mouse.y - ball.y, 2 ) ) );
-                console.log('on passe');
 
                 ballApplyNextMovement();
 
@@ -178,23 +184,25 @@ $( function() {
 
                 if ( collisionWithBorder( border.LEFT ) ) {
                     // <--|-- O
-                    ballNewNextMovement.x = 0;
+                    ballNewNextMovement.x = ball.radius;
                     vector.x = 0;
                 } else if ( collisionWithBorder( border.RIGHT ) ) {
                     // O --|-->
-                    ballNewNextMovement.x = 1000 - ball.radius;
+                    ballNewNextMovement.x = $window.width() - ball.radius;
                     vector.x = 0;
                 }
 
                 if  ( collisionWithBorder( border.TOP ) ) {
                     // <--|-- O (vertically)
-                    ballNewNextMovement.y = 0;
+                    ballNewNextMovement.y = ball.radius;
                     vector.y = 0;
                 } else if ( collisionWithBorder( border.BOTTOM ) ) {
                     // O --|--> (vertically)
                     ballNewNextMovement.y = $window.height() - ball.radius;
                     vector.y = 0;
                 }
+
+                ballApplyNextMovement( ballNewNextMovement );
             } else {
                 ballApplyNextMovement();
             }
@@ -208,9 +216,11 @@ $( function() {
             context.closePath();
         }
 
-        function drawGrid() {
-            context.globalCompositeOperation = 'destination-over'; // draw grid as background
+        function drawMap() {
+            context.drawImage( game.map, 0, 0, game.map.width, game.map.height, 0, 0, canvas.width, canvas.height );
+        }
 
+        function generateMap() {
             var lines   = Math.round( grid.width / game.gridLineWidth );
             var columns = Math.round( grid.height / game.gridLineWidth );
 
@@ -219,6 +229,7 @@ $( function() {
                 y: 0
             };
 
+            context.save();
             context.beginPath();
             context.strokeStyle = '#ccc';
 
@@ -236,140 +247,11 @@ $( function() {
 
             context.stroke();
             context.closePath();
+            context.restore();
 
-            context.globalCompositeOperation = 'source-over'; // draw normal now
+            game.map = new Image();
+            game.map.src = context.canvas.toDataURL("image/png");
         }
 
     });
 });
-
-/* With keys movement
-var KEYMAP = {
-    Z: 90,
-    UP_ARROW: 38,
-    S: 83,
-    DOWN_ARROW: 40,
-    D: 68,
-    RIGHT_ARROW: 39,
-    Q: 81,
-    LEFT_ARROW: 37
-};
-
-var speed = 2;
-
-var moving = {
-    x: false,
-    y: false,
-    xInterval: null,
-    yInterval: null,
-    angle: null
-}
-
-$( function() {
-    $( document ).ready( function() {
-        var canvas  = document.querySelector( '#game' );
-        var context = canvas.getContext( '2d' );
-
-        canvas.width    = 2857; // $( document ).width()
-        canvas.height   = 2153; // $( document ).height()
-        canvas.style.background = 'url(/web/images/background.jpg) no-repeat';
-
-        ball.x = $( window ).width() / 2;
-        ball.y = $( window ).height() / 2;
-        console.log($( window ).width());
-
-        drawBall();
-
-        $( document ).on( 'keydown', function( event ) {
-            animate( event );
-        });
-
-        $( document ).on( 'keyup', function( event ) {
-            animate( event );
-        });
-
-        function animate( event ) {
-            var keyUpEvent = "keyup" == event.type;
-
-            switch ( event.keyCode ) {
-                case KEYMAP.Z:
-                case KEYMAP.UP_ARROW:
-                    if ( keyUpEvent ) {
-                        stopMove( 'y' );
-                    } else {
-                        activeMove( 'y', true );
-                    }
-                    break;
-                case KEYMAP.S:
-                case KEYMAP.DOWN_ARROW:
-                    if ( keyUpEvent ) {
-                        stopMove( 'y' );
-                    } else {
-                        activeMove( 'y' );
-                    }
-                    break;
-                case KEYMAP.D:
-                case KEYMAP.RIGHT_ARROW:
-                    if ( keyUpEvent ) {
-                        stopMove( 'x' );
-                    } else {
-                        activeMove( 'x' );
-                    }
-                    break;
-                case KEYMAP.Q:
-                case KEYMAP.LEFT_ARROW:
-                    if ( keyUpEvent ) {
-                        stopMove( 'x' );
-                    } else {
-                        activeMove( 'x', true );
-                    }
-                    break;
-            }
-
-            moveBall();
-        }
-
-        function moveBall() {
-            clearGame();
-
-            ball.x += ( moving.x * speed );
-            ball.y += ( moving.y * speed );
-
-            drawBall();
-        }
-
-        function drawBall() {
-            context.beginPath(); //On démarre un nouveau tracé.
-            context.arc( ball.x, ball.y , ball.radius, 0, Math.PI * 2 ); //On trace la courbe délimitant notre forme
-            context.fillStyle = ball.backgroundColor;
-            context.fill(); //On utilise la méthode fill(); si l'on veut une forme pleine
-            context.closePath();
-        }
-
-        function stopMove( axis ) {
-            if ( moving.hasOwnProperty( axis ) ) {
-                moving[ axis ] = 0;
-
-                var movingInterval = axis + "Interval";
-                clearInterval( moving[ movingInterval ] );
-                moving[ movingInterval ] = null;
-            }
-        }
-
-        function activeMove( axis, negative ) {
-            if ( moving.hasOwnProperty( axis ) ) {
-                moving[ axis ] = negative ? -1 : 1;
-
-                var movingInterval = axis + "Interval";
-                if ( moving.hasOwnProperty( movingInterval ) && !moving[ movingInterval ] ) {
-                    moving[ movingInterval ] = setInterval( moveBall, 1000 / 60 );
-                }
-            }
-        }
-
-        function clearGame() {
-            context.clearRect( 0, 0, canvas.width, canvas.height );
-        }
-    });
-});
-*/
