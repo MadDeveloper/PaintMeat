@@ -8,22 +8,33 @@ $( function() {
     $( document ).ready( function() {
 
         var game = {
-            height: $( document ).height(),
-            width: $( document ).width(),
             gridLineWidth: 30,
             speed: 4
+        };
+
+        var grid = {
+            x: 0,
+            y: 0,
+            width: $( window ).width(),
+            height: $( window ).height()
         };
 
         var ball = {
             x: 0,
             y: 0,
             radius: 20,
-            backgroundColor: "#22A7F0"
-        }
+            backgroundColor: "#22A7F0",
+            stopped: false
+        };
 
         var vector = {
             x: 0,
             y: 0
+        };
+
+        var ballNextMovement = {
+            x: ball.x + vector.x,
+            y: ball.y + vector.y
         };
 
         var mouse = {
@@ -31,14 +42,25 @@ $( function() {
             y: 0
         };
 
+        var border = {
+            TOP: 0,
+            BOTTOM: 1,
+            LEFT: 2,
+            RIGHT: 3
+        };
+
         var canvas  = document.querySelector( '#game' );
         var context = canvas.getContext( '2d' );
 
-        canvas.width    = game.width;
-        canvas.height   = game.height;
+        var $window = $( window );
 
-        ball.x = ( $( window ).width() / 2 ) - ball.radius;
-        ball.y = ( $( window ).height() / 2 ) - ball.radius;
+        canvas.width    = $window.width();
+        canvas.height   = $window.height();
+
+        ball.x = ( $window.width() / 2 ) - ball.radius;
+        ball.y = ( $window.height() / 2 ) - ball.radius;
+
+        calculateBallNextMovement();
 
         start();
 
@@ -60,8 +82,13 @@ $( function() {
             setInterval( function() {
                 clearGame();
                 drawGrid();
-                moveBall();
                 drawBall();
+                if ( false === ball.stopped ) {
+                    if ( !collisionWithMouse() ) {
+                        calculateBallNextMovement();
+                        moveGrid();
+                    }
+                }
             }, 1000 / 60 );
         }
 
@@ -76,23 +103,100 @@ $( function() {
             ball.angle = Math.atan2( ball.y - mouse.y , mouse.x - ball.x );
 
             vector.x = Math.cos( ball.angle ) * norm;
-            vector.y = -( Math.sin( ball.angle ) * norm );
+            vector.y = -( Math.sin( ball.angle ) * norm ); // we inverse y axis to correspond to screen axis and not maths' axis
+
+            calculateBallNextMovement();
+            checkIfNeedToUnStopBall();
         }
 
-        function moveBall() {
-            // in reality, just the background move!
-            if ( ( ball.x + vector.x <= mouse.x - vector.x ) && ( ball.x + vector.x >= mouse.x + vector.x ) ) {
-                // ball proch to mouse, we adjust vector to reach cursor and then stop vector
-                calculateVectors( Math.sqrt( Math.pow( mouse.x - ball.x, 2 ) + Math.pow( mouse.y - ball.y, 2 ) ) );
+        function calculateBallNextMovement() {
+            ballNextMovement.x = ball.x + vector.x;
+            ballNextMovement.y = ball.y + vector.y;
 
-                ball.x += vector.x;
-                ball.y += vector.y;
+            if ( ( ( vector.x >= 0 && ballNextMovement.x > mouse.x ) || ( vector.x < 0 && ballNextMovement.x < mouse.x ) ) && !collisionWithBorder( border.LEFT ) && !collisionWithBorder( border.RIGHT ) ) {
+                ballNextMovement.x = mouse.x;
+            }
+
+            if ( ( ( vector.y >= 0 && ballNextMovement.y > mouse.y ) || ( vector.y < 0 && ballNextMovement.y < mouse.y ) ) && !collisionWithBorder( border.TOP ) && !collisionWithBorder( border.BOTTOM ) ) {
+                ballNextMovement.y = mouse.y;
+            }
+        }
+
+        function ballApplyNextMovement() {
+            ball.x = ballNextMovement.x;
+            ball.y = ballNextMovement.y;
+        }
+
+        function checkIfNeedToUnStopBall() {
+            if ( ( ballNextMovement.x < mouse.x - vector.x ) || ( ballNextMovement.x > mouse.x + vector.x ) || ( ballNextMovement.y < mouse.y - vector.y ) || ( ballNextMovement.y > mouse.y + vector.y ) ) {
+                ball.stopped = false;
+            }
+        }
+
+        function collisionWithMouse() {
+            return Math.abs( mouse.x - ball.x ) < ball.radius && Math.abs( mouse.y - ball.y ) < ball.radius; // bound-in-box
+        }
+
+        function collisionWithBorder( borderCollision ) {
+            switch ( borderCollision ) {
+                case border.TOP:
+                    return ballNextMovement.y < ball.radius;
+                    break;
+                case border.BOTTOM:
+                    return ballNextMovement.y + ball.radius > $window.height();
+                    break;
+                case border.LEFT:
+                    return ballNextMovement.x < ball.radius;
+                    break;
+                case border.RIGHT:
+                    return ballNextMovement.x + ball.radius > $window.width();
+                    break;
+                default:
+                    return false;
+                    break;
+            }
+        }
+
+        function moveGrid() {
+            // in reality, just the background move!
+            if ( collisionWithMouse() ) {
+                // ball proach to mouse, we adjust vector to reach cursor and then stop vector
+                calculateVectors( Math.sqrt( Math.pow( mouse.x - ball.x, 2 ) + Math.pow( mouse.y - ball.y, 2 ) ) );
+                console.log('on passe');
+
+                ballApplyNextMovement();
 
                 vector.x = 0;
                 vector.y = 0;
+
+                ball.stopped = true;
+            } else if ( collisionWithBorder( border.LEFT ) || collisionWithBorder( border.RIGHT ) || collisionWithBorder( border.TOP ) || collisionWithBorder( border.BOTTOM ) ) {
+                var ballNewNextMovement = {
+                    x: ballNextMovement.x,
+                    y: ballNextMovement.y
+                };
+
+                if ( collisionWithBorder( border.LEFT ) ) {
+                    // <--|-- O
+                    ballNewNextMovement.x = 0;
+                    vector.x = 0;
+                } else if ( collisionWithBorder( border.RIGHT ) ) {
+                    // O --|-->
+                    ballNewNextMovement.x = 1000 - ball.radius;
+                    vector.x = 0;
+                }
+
+                if  ( collisionWithBorder( border.TOP ) ) {
+                    // <--|-- O (vertically)
+                    ballNewNextMovement.y = 0;
+                    vector.y = 0;
+                } else if ( collisionWithBorder( border.BOTTOM ) ) {
+                    // O --|--> (vertically)
+                    ballNewNextMovement.y = $window.height() - ball.radius;
+                    vector.y = 0;
+                }
             } else {
-                ball.x += vector.x;
-                ball.y += vector.y;
+                ballApplyNextMovement();
             }
         }
 
@@ -105,10 +209,10 @@ $( function() {
         }
 
         function drawGrid() {
-            //context.globalCompositeOperation = 'destination-over'; // draw grid as background
+            context.globalCompositeOperation = 'destination-over'; // draw grid as background
 
-            var lines   = Math.round( game.width / game.gridLineWidth );
-            var columns = Math.round( game.height / game.gridLineWidth );
+            var lines   = Math.round( grid.width / game.gridLineWidth );
+            var columns = Math.round( grid.height / game.gridLineWidth );
 
             var gridCursor = {
                 x: 0,
@@ -133,7 +237,7 @@ $( function() {
             context.stroke();
             context.closePath();
 
-            //context.globalCompositeOperation = 'source-over'; // draw normal now
+            context.globalCompositeOperation = 'source-over'; // draw normal now
         }
 
     });
