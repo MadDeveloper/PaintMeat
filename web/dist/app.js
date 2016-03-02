@@ -6,25 +6,36 @@ window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequest
 
 $( function() {
     $( document ).ready( function() {
+        var $window = $( window );
 
         var game = {
-            gridLineWidth: 20,
+            gridLineWidth: 30,
             speed: 3,
-            map: null
+            map: null,
+            ballLimits: {
+                x: {
+                    min: 0,
+                    max: 0
+                },
+                y: {
+                    min: 0,
+                    max: 0
+                }
+            }
         };
 
         var grid = {
             x: 0,
             y: 0,
-            width: $( window ).width() * 2,
-            height: $( window ).height() * 2
+            width: 4000,
+            height: 3000
         };
 
         var camera = {
             x: 0,
             y: 0,
-            width: $( window ).width(),
-            height: $( window ).height(),
+            width: $window.width(),
+            height: $window.height(),
             grid: false,
             followed: null
         };
@@ -51,7 +62,8 @@ $( function() {
 
         var mouse = {
             x: 0,
-            y: 0
+            y: 0,
+            hasMoved: false
         };
 
         var border = {
@@ -64,17 +76,13 @@ $( function() {
         var canvas  = document.querySelector( '#game' );
         var context = canvas.getContext( '2d' );
 
-        var $window = $( window );
-
         canvas.width    = grid.width;
         canvas.height   = grid.height;
 
-        ball.x = $( window ).width() / 2;
-        ball.y = $( window ).height() / 2;
+        ball.x = grid.width / 2;
+        ball.y = grid.height / 2;
 
         camera.followed = ball;
-
-        calculateBallNextMovement();
 
         start();
 
@@ -82,21 +90,31 @@ $( function() {
          * Game functions
          */
         function start() {
-            generateMap();
+            generateMap( mapLoaded );
 
-            if ( camera.grid) {
-                drawCameraGrid();
+            function mapLoaded() {
+                defineBallLimits();
+
+                if ( camera.grid ) {
+                    drawCameraGrid();
+                }
+
+                updateCamera();
+                drawGame();
+
+                $( canvas ).on( 'mousemove', function( event ) {
+                    mouse.x = event.clientX;
+                    mouse.y = event.clientY;
+                    mouse.hasMoved = true;
+                });
             }
+        }
 
-            updateCamera();
-            drawGame();
-
-            $( canvas ).on( 'mousemove', function( event ) {
-                mouse.x = event.clientX;
-                mouse.y = event.clientY;
-
-                calculateVectors();
-            });
+        function defineBallLimits() {
+            game.ballLimits.x.min = camera.width / 1.5;
+            game.ballLimits.x.max = game.map.width - ( camera.width / 1.5 );
+            game.ballLimits.y.min = camera.height / 1.5;
+            game.ballLimits.y.max = game.map.height - ( camera.height / 1.5 );
         }
 
         function drawCameraGrid() {
@@ -130,9 +148,12 @@ $( function() {
 
             drawMap();
             drawBall();
-            if ( false === ball.stopped ) {
+
+            if ( false === ball.stopped && mouse.hasMoved ) {
                 if ( !collisionWithMouse() ) {
+                    calculateVectors();
                     calculateBallNextMovement();
+                    checkIfNeedToUnStopBall();
                     moveObjects();
                     updateCamera();
                 }
@@ -154,10 +175,6 @@ $( function() {
 
             vector.x = Math.cos( ball.angle ) * norm;
             vector.y = -( Math.sin( ball.angle ) * norm ); // we inverse y axis to correspond to screen axis and not maths' axis
-
-            calculateBallNextMovement();
-            checkIfNeedToUnStopBall();
-            updateCamera();
         }
 
         function updateCamera() {
@@ -181,17 +198,6 @@ $( function() {
         function calculateBallNextMovement() {
             ballNextMovement.x = ball.x + vector.x;
             ballNextMovement.y = ball.y + vector.y;
-
-            /*
-             * If ball is bloqued with border collision, vector or other axis will do the ball exceed mouse
-             */
-            /*if ( ( ( vector.x > 0 && ( ballNextMovement.x - ( camera.x - ( camera.width / 2 ) ) ) > mouse.x ) || ( vector.x < 0 && ( ballNextMovement.x - ( camera.x - ( camera.width / 2 ) ) ) < mouse.x ) ) && !collisionWithBorder( border.LEFT ) && !collisionWithBorder( border.RIGHT ) ) {
-                ballNextMovement.x = mouse.x - ( camera.x - ( camera.width / 2 ) );
-            }
-
-            if ( ( ( vector.y > 0 && ( ballNextMovement.y - ( camera.y - ( camera.height / 2 ) ) ) > mouse.y ) || ( vector.y < 0 && ( ballNextMovement.y- ( camera.y - ( camera.height / 2 ) ) ) < mouse.y ) ) && !collisionWithBorder( border.TOP ) && !collisionWithBorder( border.BOTTOM ) ) {
-                ballNextMovement.y = mouse.y - ( camera.y - ( camera.height / 2 ) );
-            }*/
         }
 
         function ballApplyNextMovement( ballNewNextMovement ) {
@@ -202,7 +208,7 @@ $( function() {
         }
 
         function checkIfNeedToUnStopBall() {
-            if ( ( ballNextMovement.x < mouse.x - vector.x ) || ( ballNextMovement.x > mouse.x + vector.x ) || ( ballNextMovement.y < mouse.y - vector.y ) || ( ballNextMovement.y > mouse.y + vector.y ) ) {
+            if ( ( ball.xCanvas < mouse.x - vector.x ) || ( ball.xCanvas > mouse.x + vector.x ) || ( ball.yCanvas < mouse.y - vector.y ) || ( ball.yCanvas > mouse.y + vector.y ) ) {
                 ball.stopped = false;
             }
         }
@@ -214,16 +220,16 @@ $( function() {
         function collisionWithBorder( borderCollision ) {
             switch ( borderCollision ) {
                 case border.TOP:
-                    return ballNextMovement.y < ball.radius;
+                    return ballNextMovement.y < ball.radius + game.ballLimits.y.min;
                     break;
                 case border.BOTTOM:
-                    return ballNextMovement.y + ball.radius > game.map.height;
+                    return ballNextMovement.y + ball.radius > game.ballLimits.y.max;
                     break;
                 case border.LEFT:
-                    return ballNextMovement.x < ball.radius;
+                    return ballNextMovement.x < ball.radius + game.ballLimits.x.min;
                     break;
                 case border.RIGHT:
-                    return ballNextMovement.x + ball.radius > game.map.width;
+                    return ballNextMovement.x + ball.radius > game.ballLimits.x.max
                     break;
                 default:
                     return false;
@@ -274,21 +280,21 @@ $( function() {
 
                 if ( collisionWithBorder( border.LEFT ) ) {
                     // <--|-- O
-                    ballNewNextMovement.x = ball.radius;
+                    ballNewNextMovement.x = ball.radius + game.ballLimits.x.min;
                     vector.x = 0;
                 } else if ( collisionWithBorder( border.RIGHT ) ) {
                     // O --|-->
-                    ballNewNextMovement.x = game.map.width - ball.radius;
+                    ballNewNextMovement.x = game.ballLimits.x.max - ball.radius;
                     vector.x = 0;
                 }
 
                 if  ( collisionWithBorder( border.TOP ) ) {
                     // <--|-- O (vertically)
-                    ballNewNextMovement.y = ball.radius;
+                    ballNewNextMovement.y = ball.radius + game.ballLimits.y.min;
                     vector.y = 0;
                 } else if ( collisionWithBorder( border.BOTTOM ) ) {
                     // O --|--> (vertically)
-                    ballNewNextMovement.y = game.map.height - ball.radius;
+                    ballNewNextMovement.y = game.ballLimits.y.max - ball.radius;
                     vector.y = 0;
                 }
 
@@ -325,7 +331,7 @@ $( function() {
             );
         }
 
-        function generateMap() {
+        function generateMap( callback ) {
             var lines   = Math.round( grid.width / game.gridLineWidth );
             var columns = Math.round( grid.height / game.gridLineWidth );
 
@@ -355,7 +361,11 @@ $( function() {
             context.restore();
 
             game.map = new Image();
-            game.map.src = context.canvas.toDataURL("image/png");
+            game.map.src = context.canvas.toDataURL( "image/jpg" );
+            game.map.onload = function() {
+                game.map.loaded = true;
+                callback();
+            }
         }
 
         function formatCoords( coords ) {
